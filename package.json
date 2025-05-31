@@ -1,0 +1,21 @@
+{
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^22.15.28",
+    "vite": "^5.4.19",
+    "vite-plugin-ruby": "^5.1.1",
+    "vite-plugin-vue-devtools": "^7.7.6"
+  },
+  "dependencies": {
+    "@primeuix/themes": "^1.1.1",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "axios": "^1.9.0",
+    "chess.js": "^1.2.0",
+    "pinia": "^3.0.2",
+    "primeicons": "^7.0.0",
+    "primevue": "^4.3.4",
+    "vue": "^3.5.16",
+    "vue-router": "^4.5.1"
+  }
+}

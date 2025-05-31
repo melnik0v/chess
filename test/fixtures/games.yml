@@ -1,0 +1,27 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  white_player_id: 1
+  black_player_id: 1
+  fen: MyString
+  moves: MyText
+  turn: MyString
+  status: MyString
+  start_time: 2025-05-30 21:31:39
+  end_time: 2025-05-30 21:31:39
+  white_time_left: 1
+  black_time_left: 1
+  time_control: MyString
+
+two:
+  white_player_id: 1
+  black_player_id: 1
+  fen: MyString
+  moves: MyText
+  turn: MyString
+  status: MyString
+  start_time: 2025-05-30 21:31:39
+  end_time: 2025-05-30 21:31:39
+  white_time_left: 1
+  black_time_left: 1
+  time_control: MyString
