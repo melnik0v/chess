@@ -10,42 +10,21 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_06_02_182322) do
+ActiveRecord::Schema[8.0].define(version: 2025_05_30_153139) do
   create_table "games", force: :cascade do |t|
-    t.integer "white_player_id"
-    t.integer "black_player_id"
-    t.string "fen"
+    t.string "fen", default: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
     t.text "moves"
-    t.string "status"
+    t.string "state"
     t.datetime "start_time"
     t.datetime "end_time"
     t.integer "white_time_left"
     t.integer "black_time_left"
     t.string "time_control"
+    t.string "white_player_fingerprint"
+    t.string "black_player_fingerprint"
+    t.string "uuid"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.string "state"
-    t.string "invitation_token"
+    t.index ["uuid"], name: "index_games_on_uuid", unique: true
   end
-
-  create_table "passkeys", force: :cascade do |t|
-    t.integer "user_id", null: false
-    t.binary "external_id"
-    t.binary "public_key"
-    t.string "nickname"
-    t.integer "sign_count"
-    t.datetime "last_used_at"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["user_id"], name: "index_passkeys_on_user_id"
-  end
-
-  create_table "users", force: :cascade do |t|
-    t.string "email"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.string "password_digest"
-  end
-
-  add_foreign_key "passkeys", "users"
 end
