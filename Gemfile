@@ -62,3 +62,6 @@ group :test do
 end
 
 # Use Capistrano for deployment
+
+gem "dry-initializer", "~> 3.2"
+gem "dry-types"

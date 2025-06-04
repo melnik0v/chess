@@ -1,12 +1,13 @@
+# frozen_string_literal: true
+
 class Game < ApplicationRecord
-  belongs_to :white_player, class_name: 'User', optional: true
-  belongs_to :black_player, class_name: 'User', optional: true
+  DEFAULT_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
 
-  before_create :generate_invitation_token
+  before_save do
+    self.uuid ||= SecureRandom.uuid
+  end
 
-  # Добавьте валидации и другие методы здесь
-
-  # Метод для определения очередности хода из FEN
+  # Возвращает цвет текущего хода ('w' или 'b') на основе FEN
   def turn
     fen_parts = self.fen.split(' ')
     if fen_parts.length > 1
@@ -16,9 +17,8 @@ class Game < ApplicationRecord
     end
   end
 
-  private
-
-  def generate_invitation_token
-    self.invitation_token = SecureRandom.hex(10)
+  # Добавляет turn в сериализацию
+  def as_json(options = {})
+    super(options).merge('turn' => turn)
   end
 end
