@@ -2,6 +2,7 @@
 import { ref, computed, nextTick, watch } from 'vue';
 import { Chess } from 'chess.js';
 import api from '@/config/api';
+import { useGameStore } from '@/stores/game';
 
 // Import SVG images
 import wPSvg from '@/images/wP.svg';
@@ -26,9 +27,6 @@ const selectedSquare = ref(null); // State for selected square (used for click-t
 const possibleMoves = ref([]); // State for possible moves (used for click)
 // isFlipped теперь вычисляется на основе currentPlayerColor
 // const isFlipped = ref(false);
-const gameStatus = ref('playing'); // State to track game status
-const winner = ref(null); // State to store the winner (null, 'w', or 'b')
-
 const showPromotionPopup = ref(false); // State to control promotion popup visibility
 const promotionSquare = ref(null); // State to store the square where promotion occurs
 
@@ -50,49 +48,59 @@ const pieceImages = {
   bK: bK,
 };
 
-// Define props, добавляем currentPlayerColor
-const props = defineProps({
-  fen: {
-    type: String,
-    default: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1' // Начальное состояние доски (исправлена опечатка в FEN)
-  },
-  currentPlayerColor: {
-    type: String, // 'w' для белых, 'b' для черных, null если не игрок
-    default: null,
-  }
-});
+const gameStore = useGameStore();
 
 // Вычисляемое свойство для определения ориентации доски
-const isFlipped = computed(() => props.currentPlayerColor === 'b');
+// Используем currentPlayerColor, который теперь безопасно вычисляется
+const isFlipped = computed(() => gameStore.currentPlayerColor === 'b');
 
-// Watch for changes in the fen prop and update the chess.js instance
-watch(() => props.fen, (newFen) => {
-  console.log('FEN prop changed:', newFen);
+// Watch for changes in gameStore.gameData.fen and update the chess.js instance
+watch(() => gameStore.gameData?.fen, (newFen) => {
+  console.log('FEN changed in store:', newFen);
   if (newFen) {
-    // Load the new FEN into the chess.js instance
-    const success = game.value.load(newFen);
-    if (success) {
+    try {
+      game.value.load(newFen);
       console.log('Chess.js board loaded with new FEN:', newFen);
-      // Increment gameStateVersion to force board re-render
-      gameStateVersion.value++;
-    } else {
-      console.error('Failed to load FEN:', newFen);
-      // Handle error loading FEN if necessary
+      gameStateVersion.value++; // Принудительное обновление доски
+
+      // Check game-ending conditions and check status after loading new FEN
+      if (game.value.isCheckmate()) {
+        gameStore.gameStatus = 'checkmate';
+        gameStore.winner = game.value.turn() === 'w' ? 'b' : 'w';
+        console.log('Checkmate! Winner:', gameStore.winner);
+      } else if (game.value.isStalemate()) {
+        gameStore.gameStatus = 'stalemate';
+        console.log('Stalemate! Draw');
+      } else if (game.value.isThreefoldRepetition()) {
+        gameStore.gameStatus = 'draw';
+        console.log('Draw by threefold repetition');
+      } else if (game.value.isInsufficientMaterial()) {
+        gameStore.gameStatus = 'draw';
+        console.log('Draw by insufficient material');
+      } else if (game.value.isDrawByFiftyMoves()) {
+        gameStore.gameStatus = 'draw';
+        console.log('Draw by 50-move rule');
+      } else if (game.value.inCheck()) {
+        gameStore.gameStatus = 'check';
+        console.log('Check!');
+      } else {
+        gameStore.gameStatus = 'playing';
+        console.log('Game continues');
+      }
+    } catch (e) {
+      console.error('Failed to load FEN or determine game status:', e);
     }
   }
-}, { immediate: true }); // 'immediate: true' will run the watcher immediately on component mount
+}, { immediate: true });
 
-// Watch for changes in the currentPlayerColor prop and force board re-render
-watch(() => props.currentPlayerColor, (newColor) => {
+// Watch for changes in currentPlayerColor and force board re-render
+watch(() => gameStore.currentPlayerColor, (newColor) => {
   console.log('currentPlayerColor changed:', newColor);
-  // Increment gameStateVersion to force board re-render when color is set
-  // This is important for ensuring correct board orientation on load/join
-  gameStateVersion.value++;
+  gameStateVersion.value++; // Принудительное обновление доски при смене цвета
 });
 
 const board = computed(() => {
   // Depend on gameStateVersion to force reactivity
-  // Accessing gameStateVersion.value here makes this computed property reactive to it
   console.log('Board computed property is updating. Game State Version:', gameStateVersion.value);
 
   const rows = [];
@@ -147,21 +155,23 @@ function isKingInCheck(square) {
   return game.value.inCheck() && square.piece.color === game.value.turn();
 }
 
-// Define emitted events
-const emit = defineEmits(['move-made']);
-
 // Function to handle square click (for selecting pieces)
 function onSquareClick(square) {
   // Добавляем проверку: может ли текущий пользователь делать ход?
-  if (props.currentPlayerColor !== game.value.turn()) {
+  // Теперь currentPlayerColor безопасно вычисляется из стора
+  if (gameStore.currentPlayerColor !== game.value.turn()) {
     console.log('Не ваш ход или вы не игрок.');
     return; // Выходим, если не ход текущего игрока или пользователь не игрок
   }
 
-  // Prevent moves if the game is over (but allow moves if in check)
-  if (gameStatus.value === 'checkmate' || gameStatus.value === 'stalemate' || gameStatus.value === 'draw') {
+  // Prevent moves if the game is over
+  // Используем gameStore.gameStatus
+  if (gameStore.gameStatus === 'checkmate' || gameStore.gameStatus === 'stalemate' || gameStore.gameStatus === 'draw') {
     return;
   }
+
+  // Проверяем состояние игры через стор
+  if (gameStore.gameData?.state !== 'in_progress') return;
 
   // Если уже выбрана фигура
   if (selectedSquare.value) {
@@ -169,6 +179,12 @@ function onSquareClick(square) {
     if (selectedSquare.value.square === square.square) {
       selectedSquare.value = null;
       possibleMoves.value = [];
+    } else if (square.piece && square.piece.color === gameStore.currentPlayerColor) {
+      selectedSquare.value = square;
+      possibleMoves.value = game.value.moves({ square: square.square, verbose: true }).map(move => move.to);
+      if (gameStore.gameStatus !== 'checkmate' && gameStore.gameStatus !== 'stalemate' && gameStore.gameStatus !== 'draw') {
+        gameStore.gameStatus = 'playing';
+      }
     } else {
       // Проверка на превращение пешки
       const piece = game.value.get(selectedSquare.value.square);
@@ -180,6 +196,7 @@ function onSquareClick(square) {
         promotionSquare.value = square.square;
       } else {
         // Пытаемся сделать обычный ход
+        console.log(`Attempting move from ${selectedSquare.value.square} to ${square.square}`);
         const move = game.value.move({
           from: selectedSquare.value.square,
           to: square.square,
@@ -187,51 +204,32 @@ function onSquareClick(square) {
 
         if (move) {
           console.log('Move made:', move);
-          emit('move-made', { fen: game.value.fen(), move: move });
-          gameStateVersion.value++;
-
-          nextTick(() => {
-            if (game.value.isCheckmate()) {
-              gameStatus.value = 'checkmate';
-              winner.value = game.value.turn() === 'w' ? 'b' : 'w';
-              console.log('Checkmate! Winner:', winner.value);
-            } else if (game.value.isStalemate()) {
-              gameStatus.value = 'stalemate';
-              console.log('Stalemate! Draw');
-            } else if (game.value.isThreefoldRepetition()) {
-              gameStatus.value = 'draw';
-              console.log('Draw by threefold repetition');
-            } else if (game.value.isInsufficientMaterial()) {
-              gameStatus.value = 'draw';
-              console.log('Draw by insufficient material');
-            } else if (game.value.isDrawByFiftyMoves()) {
-              gameStatus.value = 'draw';
-              console.log('Draw by 50-move rule');
-            } else {
-              if (game.value.inCheck()) {
-                gameStatus.value = 'check';
-                console.log('Check!');
-              } else {
-                gameStatus.value = 'playing';
-                console.log('Game continues');
-              }
-            }
-          });
+          // Обновляем gameData в сторе напрямую после успешного локального хода
+          // В дальнейшем, после отправки на бэкенд, стор будет обновлен извне через polling
+          gameStore.gameData = { ...gameStore.gameData, fen: game.value.fen() };
+          gameStateVersion.value++; // Принудительное обновление доски
 
           selectedSquare.value = null;
           possibleMoves.value = [];
+
+          // Здесь вызываем action стора для отправки хода на бэкенд
+          // Нет необходимости emit'ить move-made
+           gameStore.updateGame(gameStore.gameId, game.value.fen());
+
         } else {
           console.log('Invalid move (click)');
+          console.log(`Move from ${selectedSquare.value.square} to ${square.square} is invalid according to chess.js.`);
           selectedSquare.value = null;
           possibleMoves.value = [];
         }
       }
     }
-  } else if (square.piece && square.piece.color === props.currentPlayerColor && game.value.turn() === square.piece.color) { // Выбираем фигуру, только если она принадлежит текущему игроку и сейчас его ход
+  } else if (square.piece && square.piece.color === gameStore.currentPlayerColor && game.value.turn() === square.piece.color) { // Выбираем фигуру, только если она принадлежит текущему игроку и сейчас его ход
     selectedSquare.value = square;
     possibleMoves.value = game.value.moves({ square: square.square, verbose: true }).map(move => move.to);
-    if (gameStatus.value !== 'checkmate' && gameStatus.value !== 'stalemate' && gameStatus.value !== 'draw') {
-        gameStatus.value = 'playing';
+     // Обновляем gameStatus в сторе, если он не указывает на завершение игры
+    if (gameStore.gameStatus !== 'checkmate' && gameStore.gameStatus !== 'stalemate' && gameStore.gameStatus !== 'draw') {
+        gameStore.gameStatus = 'playing';
     }
   } else {
      console.log('Нельзя выбрать фигуру противника или пустую клетку (если фигура не выбрана).');
@@ -244,20 +242,18 @@ function onSquareClick(square) {
 // function onDrop(event, toSquare) { ... }
 // function onDragEnd(event) { ... }
 
-// Function to reset the game
+// Function to reset the game - вызывает action стора
 function resetGame() {
-  // Создаем новый экземпляр игры и присваиваем его game.value
+  gameStore.resetGame();
+  // При сбросе через стор, локальная chess.js игра тоже должна сброситься
   game.value = new Chess();
-  // boardState.value = JSON.parse(JSON.stringify(game.board())); // Больше не нужно
-  selectedSquare.value = null;
-  possibleMoves.value = [];
-  gameStatus.value = 'playing'; // Reset game status
-  winner.value = null; // Reset winner
-  gameStateVersion.value = 0; // Reset game state version
+   selectedSquare.value = null;
+   possibleMoves.value = [];
+   gameStateVersion.value = 0;
 }
 
 // Function to handle promotion piece selection
-function selectPromotionPiece(pieceType) {
+async function selectPromotionPiece(pieceType) {
   // Construct the move with the selected promotion piece
   const move = game.value.move({
     from: selectedSquare.value.square,
@@ -268,54 +264,16 @@ function selectPromotionPiece(pieceType) {
   if (move) {
     console.log('Promotion move made:', move);
 
-    // Emit the promotion move data
-    emit('move-made', { fen: game.value.fen(), move: move });
+    // Обновляем gameData в сторе напрямую после успешного локального хода с превращением
+    gameStore.gameData = { ...gameStore.gameData, fen: game.value.fen() };
 
-    // Increment gameStateVersion to force board re-render
-    gameStateVersion.value++;
+    gameStateVersion.value++; // Принудительное обновление доски
 
-    // Check game-ending conditions after the move
-    // Оборачиваем проверку статуса игры в nextTick
-    nextTick(() => {
-      // Добавляем явную проверку, что game.value определен
-      if (game.value) {
-        if (game.value.isCheckmate()) {
-          gameStatus.value = 'checkmate';
-          winner.value = game.value.turn() === 'w' ? 'b' : 'w';
-          console.log('Checkmate! Winner:', winner.value);
-        } else if (game.value.isStalemate()) {
-          gameStatus.value = 'stalemate';
-          console.log('Stalemate! Draw');
-        } else if (game.value.isThreefoldRepetition()) {
-          gameStatus.value = 'draw';
-          console.log('Draw by threefold repetition');
-        } else if (game.value.isInsufficientMaterial()) {
-          gameStatus.value = 'draw';
-          console.log('Draw by insufficient material');
-        } else if (game.value.isDrawByFiftyMoves()) {
-          gameStatus.value = 'draw';
-          console.log('Draw by 50-move rule');
-        } else {
-          if (game.value.inCheck()) {
-            gameStatus.value = 'check';
-            console.log('Check!');
-          } else {
-            gameStatus.value = 'playing';
-            console.log('Game continues');
-          }
-        }
-      } else {
-        console.error('Error: game.value is undefined after promotion move.');
-        gameStatus.value = 'error'; // Возможно, стоит добавить статус ошибки
-      }
-
-      // Hide the promotion popup and reset states after nextTick
-      showPromotionPopup.value = false;
-      promotionSquare.value = null;
-      selectedSquare.value = null; // Reset selected square after move
-      possibleMoves.value = []; // Clear possible moves after move
-    });
-
+    // Hide the promotion popup and reset states after move
+    showPromotionPopup.value = false;
+    promotionSquare.value = null;
+    selectedSquare.value = null; // Reset selected square after move
+    possibleMoves.value = []; // Clear possible moves after move
   } else {
     console.log('Invalid promotion move');
     // Handle unexpected invalid promotion moves if necessary
@@ -326,6 +284,9 @@ function selectPromotionPiece(pieceType) {
     selectedSquare.value = null; // Reset selected square after move
     possibleMoves.value = []; // Clear possible moves after move
   }
+
+  // Здесь вызываем action стора для отправки хода с превращением на бэкенд
+  await gameStore.updateGame(gameStore.gameId, game.value.fen());
 }
 
 </script>
@@ -363,21 +324,15 @@ function selectPromotionPiece(pieceType) {
       <div v-for="file in files" :key="file" class="label">{{ file }}</div>
     </div>
 
-    <div v-if="gameStatus !== 'playing'" class="game-status">
-        <p v-if="gameStatus === 'checkmate'">Мат! {{ winner === 'w' ? 'Белые' : 'Черные' }} выиграли.</p>
-        <p v-else-if="gameStatus === 'stalemate'">Пат! Ничья.</p>
-        <p v-else-if="gameStatus === 'draw'">Ничья.</p>
-        <p v-else-if="gameStatus === 'check'">Шах!</p>
-    </div>
-
-    <div v-if="gameStatus === 'checkmate' || gameStatus === 'stalemate' || gameStatus === 'draw'" class="game-over-overlay">
+    <!-- Статус игры теперь берется из стора -->
+    <div v-if="gameStore.gameStatus === 'checkmate' || gameStore.gameStatus === 'stalemate' || gameStore.gameStatus === 'draw'" class="game-over-overlay">
       <div class="game-over-modal">
-        <h3 v-if="gameStatus === 'checkmate'">Мат! {{ winner === 'w' ? 'Белые' : 'Черные' }} выиграли!</h3>
-        <h3 v-else-if="gameStatus === 'stalemate'">Пат! Ничья.</h3>
-        <h3 v-else-if="gameStatus === 'draw'">Ничья.</h3>
-        <h3 v-else-if="gameStatus === 'insufficient'">Недостаточно материала для мата! Ничья.</h3>
-        <h3 v-else-if="gameStatus === 'threefold'">Троекратное повторение! Ничья.</h3>
-        <h3 v-else-if="gameStatus === 'fifty-move'">Правило 50 ходов! Ничья.</h3>
+        <h3 v-if="gameStore.gameStatus === 'checkmate'">Мат! {{ gameStore.winner === 'w' ? 'Белые' : 'Черные' }} выиграли!</h3>
+        <h3 v-else-if="gameStore.gameStatus === 'stalemate'">Пат! Ничья.</h3>
+        <h3 v-else-if="gameStore.gameStatus === 'draw'">Ничья.</h3>
+        <h3 v-else-if="gameStore.gameStatus === 'insufficient'">Недостаточно материала для мата! Ничья.</h3>
+        <h3 v-else-if="gameStore.gameStatus === 'threefold'">Троекратное повторение! Ничья.</h3>
+        <h3 v-else-if="gameStore.gameStatus === 'fifty-move'">Правило 50 ходов! Ничья.</h3>
         <button @click="resetGame">Сыграть снова</button>
       </div>
     </div>
@@ -438,6 +393,9 @@ function selectPromotionPiece(pieceType) {
   height: 100%; /* Занимаем всю высоту ячейки Grid */
   border: 1px solid #000;
   box-sizing: border-box;
+  user-select: none; /* Предотвращаем выделение текста */
+  -webkit-user-select: none; /* Для Webkit-браузеров */
+  -ms-user-select: none; /* Для Internet Explorer/Edge */
 }
 
 .board-row {
@@ -462,7 +420,7 @@ function selectPromotionPiece(pieceType) {
 }
 
 .square.selected {
-  background-color: yellow; /* Highlight selected square */
+  filter: grayscale(1); /* Применяем черно-белый фильтр к клетке */
 }
 
 .square.possible-move {

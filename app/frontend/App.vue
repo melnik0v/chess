@@ -3,27 +3,32 @@
 </template>
 
 <script setup>
-// Composition API тут
+import { onMounted } from 'vue';
 import DefaultLayout from '@/components/layout/DefaultLayout/DefaultLayout.vue';
+import { useDeviceStore } from '@/stores/device';
+
+const deviceStore = useDeviceStore();
+
+onMounted(() => {
+  deviceStore.loadFingerprint();
+});
+
 </script>
 
 <style>
-/* Это глобальные стили */
 html, body {
   margin: 0;
   padding: 0;
-  overflow: hidden; /* Добавляем, чтобы избежать скроллбаров из-за 100vh */
+  overflow: hidden;
 }
 
 #app {
-  height: 100vh; /* Убедимся, что корневой элемент приложения занимает всю высоту */
+  height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
-/* Глобальные стили, которые были раньше */
 </style>
 
 <style scoped>
-/* Стили, специфичные для App.vue, если есть */
 </style>

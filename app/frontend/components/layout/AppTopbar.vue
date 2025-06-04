@@ -4,21 +4,10 @@
       <router-link to="/" class="app-title">choss</router-link>
     </div>
     <div class="topbar-center">
-      <template v-if="gameStore.gameData">
-        <div v-if="gameStore.gameData.state">Состояние игры: {{ gameStore.gameData.state }}</div>
-        <div class="current-game-color-data" v-if="gameStore.currentPlayerColor">Ваш цвет: <span :class="['current-game-color', gameStore.currentPlayerColorFull]"></span></div>
-        <div v-if="gameStore.gameData.turn">Ход: {{ gameStore.gameData.turn === 'w' ? 'Белых' : 'Черных' }}</div>
-      </template>
+
     </div>
     <div class="topbar-end">
-      <template v-if="isAuthenticated">
-        <Button label="Создать игру" @click="showColorDialog" class="p-button-text mr-2" />
-        <Button label="Выйти" @click="logout" class="p-button-text" />
-      </template>
-      <template v-else>
-        <router-link to="/sign-in"><Button label="Войти" class="p-button-text mr-2" /></router-link>
-        <router-link to="/sign-up"><Button label="Регистрация" class="p-button-outlined" /></router-link>
-      </template>
+      <Button label="Создать игру" @click="showColorDialog" class="p-button-text mr-2" />
     </div>
   </div>
 
@@ -44,16 +33,12 @@ import Button from 'primevue/button';
 import Dialog from 'primevue/dialog';
 import RadioButton from 'primevue/radiobutton';
 import { useRouter } from 'vue-router';
-import { useAuthStore } from '@/stores/auth';
-import { useGameStore } from '@/stores/game';
-import api from '@/config/api'; // Импортируем настроенный api клиент
+import api from '@/config/api';
+import { useDeviceStore } from '@/stores/device';
 
 const router = useRouter();
-const authStore = useAuthStore();
-const gameStore = useGameStore();
+const deviceStore = useDeviceStore();
 
-const isAuthenticated = computed(() => authStore.isAuthenticated);
-const userEmail = computed(() => authStore.user ? authStore.user.email : '');
 
 const displayColorDialog = ref(false);
 const chosenColor = ref(null);
@@ -64,46 +49,42 @@ const showColorDialog = () => {
 
 const hideColorDialog = () => {
   displayColorDialog.value = false;
-  chosenColor.value = null; // Сброс выбора цвета при отмене
+  chosenColor.value = null;
 };
 
-// Выход из системы
-const logout = () => {
-  authStore.logout();
-  router.push('/sign-in'); // Перенаправление на страницу входа после выхода
-};
 
-// Функция для создания игры
 const createGame = async () => {
   console.log('Attempting to create game with color:', chosenColor.value);
+  const fingerprint = deviceStore.getFingerprint;
+
+  if (!fingerprint || fingerprint === 'unknown') {
+    console.error('Отпечаток устройства не загружен. Невозможно создать игру.');
+
+    return;
+  }
+
   if (!chosenColor.value) {
     console.log('No color chosen, game not created.');
-    return; // Не создаем игру, если цвет не выбран
+    return;
   }
 
   try {
     console.log('Sending request to /api/v1/games with color:', chosenColor.value);
     const response = await api.post('/games', {
+      fingerprint: fingerprint,
       chosen_color: chosenColor.value,
     });
-    const { game_id, invitation_token } = response.data;
+    const { uuid } = response.data;
 
-    console.log('Игра создана:', { game_id, invitation_token });
-    router.push({ name: 'GamePage', params: { id: game_id } }); // Перенаправить на страницу игры
-    hideColorDialog(); // Закрыть диалог после создания игры
+    console.log('Игра создана:', { uuid });
+    router.push({ name: 'GamePage', params: { uuid: uuid } });
+    hideColorDialog();
   } catch (error) {
     console.error('Ошибка при создании игры:', error);
-    // TODO: Обработать ошибку, показать сообщение пользователю
-    hideColorDialog(); // Закрыть диалог даже в случае ошибки
+
+    hideColorDialog();
   }
 };
-
-// Проверяем статус авторизации при монтировании компонента (вызываем fetchUser из стора)
-// authStore.fetchUser(); // Удаляем этот вызов
-
-// В реальном приложении нужно будет слушать изменения статуса авторизации
-// Например, через централизованное хранилище (Vuex, Pinia)
-
 </script>
 
 <style scoped>
@@ -112,31 +93,28 @@ const createGame = async () => {
   justify-content: space-between;
   align-items: center;
   padding: 10px 20px;
-  background-color: #2a2a2a; /* Пример цвета фона */
-  color: #cacaca; /* Пример цвета текста */
-  /* Добавляем стили для фиксации */
+  background-color: #2a2a2a;
+  color: #cacaca;
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
-  z-index: 1000; /* Убедимся, что топбар находится поверх другого контента */
-  height: 60px; /* Устанавливаем фиксированную высоту */
+  z-index: 1000;
+  height: 60px;
 }
 
 .topbar-start,
 .topbar-end {
-  /* flex-basis: 0; /* Позволяет этим блокам сжиматься */
-  flex-shrink: 0; /* Предотвращает сжатие меньше содержимого */
+  flex-shrink: 0;
 }
 
 .topbar-center {
-  flex-grow: 1; /* Позволяет блоку занимать все доступное пространство */
-  text-align: center; /* Центрируем текст */
-  /* Дополнительные стили для выравнивания содержимого внутри */
+  flex-grow: 1;
+  text-align: center;
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 20px; /* Добавляем расстояние между элементами информации */
+  gap: 20px;
 }
 
 .app-title {
